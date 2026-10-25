@@ -1,0 +1,6 @@
+id,role,type,description,size/ratio,style line ref,source
+cover,launch cover,illustration,Cheerful animal mascots on a winding meadow board with lotto cards coins and a die,1200x630,STYLE-01,generate
+og_image,social preview,illustration,Matching wide game scene composed for social sharing,1200x630,STYLE-01,generate
+favicon,site icon,vector,Simple green paw-print brand mark,64x64,STYLE-01,generate
+animal_cards,lotto cards,illustration,24 colorful large lotto cards using distinct friendly animal sets,card grid,STYLE-01,generate
+monopoly_board,board background,illustration,Cheerful grassy board-game landscape with path and playful details,16:9,STYLE-01,generate
