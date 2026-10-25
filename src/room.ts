@@ -310,11 +310,13 @@ export class Room extends DurableObject<Env> {
       conns[connId] = msg.playerId;
       const isNewSeat = !game.seats.includes(msg.playerId) && game.seats.length < META.maxPlayers;
       if (isNewSeat) game.seats.push(msg.playerId);
-      if (game.status === "waiting" && game.seats.length >= META.minPlayers) {
+      // Prepare the room as soon as the first person arrives, but never start
+      // the game automatically. The judge starts it explicitly with startGame.
+      if (!game.state && game.seats.length > 0) {
         game.state = logic.setup(game.seats);
-        game.status = "playing";
-      } else if (game.status === "playing" && isNewSeat && game.state) {
-        // Late joiners become players in the existing game without resetting progress.
+        game.status = "waiting";
+      } else if (isNewSeat && game.state && game.status !== "over") {
+        // New seats join the existing waiting or playing room without resetting progress.
         game.state = logic.applyAction(game.state, (game.state as { judge?: string }).judge ?? game.seats[0] ?? "", { type: "addPlayer", playerId: msg.playerId });
       }
       await this.save(game, conns);
@@ -325,13 +327,20 @@ export class Room extends DurableObject<Env> {
     if (!playerId) return this.error(connId, "join first");
 
     if (msg.type === "action") {
-      if (game.status !== "playing") return this.error(connId, "game is not in progress");
+      if (!game.state) return this.error(connId, "Спочатку зачекайте, поки створиться кімната.");
       if (!isOwner && !game.seats.includes(playerId)) return this.error(connId, "spectators cannot act");
+      // While waiting, allow profile/card setup and the judge's explicit start.
+      const actionType = (msg.action as { type?: unknown } | null)?.type;
+      if (game.status === "over") return this.error(connId, "Гру завершено. Створи нову кімнату для наступної партії.");
+      if (game.status === "waiting" && !["profile", "team", "selectCards", "configure", "difficulty", "startGame"].includes(String(actionType))) {
+        return this.error(connId, "Гра ще не почалася. Суддя має натиснути «Почати гру».");
+      }
       // Owner authorization is verified server-side from the HttpOnly session cookie.
       const actorId = isOwner ? ((game.state as { judge?: string }).judge ?? playerId) : playerId;
       const verdict = logic.validateAction(game.state, actorId, msg.action);
       if (!verdict.ok) return this.error(connId, verdict.error ?? "invalid action");
       game.state = logic.applyAction(game.state, actorId, msg.action);
+      if (actionType === "startGame") game.status = "playing";
       const end = logic.isGameOver(game.state);
       if (end.over) {
         game.status = "over";
@@ -343,9 +352,8 @@ export class Room extends DurableObject<Env> {
 
     // msg.type === "reset"
     if (!game.seats.includes(playerId)) return this.error(connId, "spectators cannot reset");
-    const enough = game.seats.length >= META.minPlayers;
-    game.state = enough ? logic.setup(game.seats) : null;
-    game.status = enough ? "playing" : "waiting";
+    game.state = game.seats.length > 0 ? logic.setup(game.seats) : null;
+    game.status = "waiting";
     game.result = null;
     await this.save(game, conns);
     return this.broadcast(game, conns);
